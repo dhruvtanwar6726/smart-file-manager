@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Smart File Explorer</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: radial-gradient(circle at top left, #b3e5fc, #e1f5fe 40%, #ffffff);
+            background-attachment: fixed;
+            overflow-x: hidden;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            max-width: 1080px;
+            margin: 3rem auto;
+        }
+        canvas {
+            border: 2px solid #ccc;
+            background-color: #fdfdfd;
+            display: block;
+            margin: 1.5rem auto;
+            border-radius: 16px;
+        }
+        h1 {
+            text-align: center;
+            color: #00796b;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        h3 {
+            color: #004d40;
+            margin-top: 2rem;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 0.5rem;
+        }
+        .header-bar {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .controls input[type="text"] {
+            padding: 0.6rem;
+            width: 300px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            font-size: 16px;
+        }
+        .controls button {
+            padding: 0.6rem 1rem;
+            border: none;
+            background: #00796b;
+            color: white;
+            border-radius: 10px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .controls button:hover {
+            background: #004d40;
+        }
+        ul#results li {
+            padding: 8px 10px;
+            border-radius: 8px;
+            transition: background 0.3s;
+        }
+        ul#results li:hover {
+            background: #e0f2f1;
+            cursor: pointer;
+        }
+        summary {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        details {
+            margin-bottom: 0.75rem;
+            background: #f5f5f5;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            padding: 0.5rem 1rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Smart File Explorer</h1>
+    <div class="header-bar">
+        <div class="controls">
+            <input type="text" id="searchInput" placeholder="Search files...">
+            <button onclick="search()">🔍 Search</button>
+            <button onclick="startVoiceSearch()">🎤 Voice</button>
+            <button onclick="location.reload()">🔄 Refresh</button>
+            <button onclick="window.close()" class="close-button">❌ Close</button>
+        </div>
+    </div>
+
+    <h3>Search Results</h3>
+    <ul id="results"></ul>
+
+    <h3>Visual Explorer</h3>
+    <canvas id="fileCanvas" width="960" height="500"></canvas>
+
+    <h3>File Categories</h3>
+    {% for category, ext_map in categorized_files.items() %}
+    <details class="category-section">
+        <summary>🗂️ {{ category }}</summary>
+        {% for ext, paths in ext_map.items() %}
+        <details class="extension-section">
+            <summary>{{ ext or "No Extension" }}</summary>
+            <ul>
+                {% for path in paths %}
+                <li ondblclick="openFile(`{{ path|replace('\\', '\\\\') }}`)">📄 {{ path }}</li>
+                {% endfor %}
+            </ul>
+        </details>
+        {% endfor %}
+    </details>
+    {% endfor %}
+</div>
+
+<script>
+    const categories = {{ categorized_files | tojson | safe }};
+    const icons = {
+        'Images': '🖼️',
+        'Documents': '📄',
+        'Code': '💻',
+        'Audio': '🎵',
+        'Video': '🎬',
+        'Archives': '📦',
+        'Others': '🗃️'
+    };
+
+    const canvas = document.getElementById("fileCanvas");
+    const ctx = canvas.getContext("2d");
+    let bubbles = [];
+    let hoveredIndex = -1;
+
+    function drawBubbles() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        bubbles = [];
+        const catNames = Object.keys(categories);
+        const radius = 60;
+        const spacing = 220;
+        let row = 0, col = 0;
+
+        catNames.forEach((cat, index) => {
+            const x = 120 + col * spacing;
+            const y = 100 + row * spacing;
+            col++;
+            if (col >= 4) { col = 0; row++; }
+
+            const isHovered = index === hoveredIndex;
+            const r = isHovered ? radius + 5 : radius;
+
+            bubbles.push({ x, y, r: radius, label: cat });
+
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.fillStyle = isHovered ? "#dce775" : "#aed581";
+            ctx.fill();
+            ctx.strokeStyle = isHovered ? "#9e9d24" : "#558b2f";
+            ctx.stroke();
+
+            ctx.fillStyle = "#33691e";
+            ctx.font = "20px Segoe UI";
+            ctx.textAlign = "center";
+            ctx.fillText(icons[cat] || '📁', x, y - 5);
+            ctx.font = "12px Segoe UI";
+            ctx.fillText(cat, x, y + 18);
+        });
+    }
+
+    canvas.addEventListener("mousemove", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        let foundHover = false;
+        bubbles.forEach((b, index) => {
+            const dx = x - b.x;
+            const dy = y - b.y;
+            if (Math.sqrt(dx * dx + dy * dy) < b.r) {
+                hoveredIndex = index;
+                foundHover = true;
+            }
+        });
+        if (!foundHover) hoveredIndex = -1;
+        drawBubbles();
+    });
+
+    canvas.addEventListener("click", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        bubbles.forEach(b => {
+            const dx = x - b.x;
+            const dy = y - b.y;
+            if (Math.sqrt(dx * dx + dy * dy) < b.r) {
+                const files = categories[b.label];
+                const fileCount = Array.isArray(files) ? files.length : Object.values(files).flat().length;
+                alert(`Category: ${b.label}\nFiles: ${fileCount}`);
+            }
+        });
+    });
+
+    function search() {
+        const query = document.getElementById("searchInput").value;
+        fetch("/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query })
+        })
+        .then(res => res.json())
+        .then(data => {
+            const resultsList = document.getElementById("results");
+            resultsList.innerHTML = "";
+            if (data.length === 0) {
+                resultsList.innerHTML = "<li>No files found.</li>";
+            } else {
+                data.forEach(path => {
+                    const li = document.createElement("li");
+                    li.textContent = path;
+                    li.ondblclick = () => openFile(path);
+                    resultsList.appendChild(li);
+                });
+            }
+        });
+    }
+
+    function openFile(path) {
+        fetch("/open_file", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status !== "success") {
+                alert("Failed to open file: " + data.message);
+            }
+        });
+    }
+
+    function startVoiceSearch() {
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.onresult = function(event) {
+            const text = event.results[0][0].transcript;
+            document.getElementById("searchInput").value = text;
+            search();
+        };
+        recognition.start();
+    }
+
+    drawBubbles();
+</script>
+</body>
+</html>

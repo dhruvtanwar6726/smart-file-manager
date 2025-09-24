@@ -1,1 +1,1 @@
-# smart-file-manager
+# smart-file-explorer
